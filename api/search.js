@@ -1,41 +1,53 @@
-import express from "express";
-import multer from "multer";
-import axios from "axios";
+import fetch from "node-fetch";
 import FormData from "form-data";
-import cors from "cors";
 
-const app = express();
-app.use(cors());
-const upload = multer();
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "10mb", // чтобы большие картинки проходили
+    },
+  },
+};
 
-app.post("/api/search", upload.single("image"), async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: "No image uploaded" });
-        }
-
-        const formData = new FormData();
-        formData.append("file", req.file.buffer, {
-            filename: "upload.jpg",
-            contentType: "image/jpeg",
-        });
-
-        const response = await axios.post(
-            "https://api.trace.moe/search?anilistInfo",
-            formData,
-            { headers: formData.getHeaders() }
-        );
-
-        res.json(response.data);
-    } catch (error) {
-        console.error("Trace.moe ERROR:", error.response?.data || error);
-        res.status(500).json({ error: "Trace.moe request failed" });
+export default async function handler(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
     }
-});
 
-app.get("/", (req, res) => {
-    res.send("AnimeFinder backend is running");
-});
+    const { image } = req.body;
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log("Backend running on PORT", PORT));
+    if (!image) {
+      return res.status(400).json({ error: "No image provided" });
+    }
+
+    // ⚠️ ВСТАВЬ СВОЙ API KEY НИЖЕ
+    const SAUCE_API_KEY = "cbd937f4ee0fb43d631f7d2bf758e895eb2c5809";
+
+    // Конвертируем base64 → бинарный буфер
+    const binaryImage = Buffer.from(image, "base64");
+
+    // Создаем form-data
+    const form = new FormData();
+    form.append("output_type", "2");
+    form.append("api_key", SAUCE_API_KEY);
+    form.append("file", binaryImage, {
+      filename: "image.jpg",
+      contentType: "image/jpeg",
+    });
+
+    // Отправляем запрос к SauceNAO
+    const response = await fetch("https://saucenao.com/search.php", {
+      method: "POST",
+      body: form,
+    });
+
+    const json = await response.json();
+
+    return res.status(200).json(json);
+
+  } catch (err) {
+    console.error("API error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+}
