@@ -1,13 +1,4 @@
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
 export default async function handler(req, res) {
-  //
-  // 1) CORS FIX
-  //
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -17,39 +8,42 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "Only POST is allowed" });
   }
 
   try {
-    //
-    // 2) Получаем изображение
-    //
-    const chunks = [];
-    for await (const chunk of req) {
-      chunks.push(chunk);
-    }
-    const buffer = Buffer.concat(chunks);
+    const { image } = req.body;
 
-    //
-    // 3) Отправляем в trace.moe
-    //
-    const trace = await fetch(`https://api.trace.moe/search?anilistInfo`, {
+    if (!image) {
+      return res.status(400).json({ error: "No image provided" });
+    }
+
+    // Если пришел "голый base64", автоматически добавим префикс PNG
+    let normalizedImage = image;
+    if (!image.startsWith("data:image")) {
+      normalizedImage = "data:image/jpeg;base64," + image;
+    }
+
+    const traceResp = await fetch("https://api.trace.moe/search", {
       method: "POST",
-      headers: {
-        "Content-Type": "image/jpeg", // ок, trace.moe сам определит
-      },
-      body: buffer,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: normalizedImage }),
     });
 
-    const result = await trace.json();
+    const data = await traceResp.json();
 
-    //
-    // 4) Ответ
-    //
-    return res.status(200).json(result);
+    if (!traceResp.ok) {
+      return res.status(traceResp.status).json({
+        error: data.error || "trace.moe returned an error",
+      });
+    }
+
+    return res.status(200).json({
+      result: data.result || [],
+    });
 
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "Server error" });
+    console.error("SERVER ERROR:", e);
+    return res.status(500).json({ error: "Internal server error" });
   }
 }
