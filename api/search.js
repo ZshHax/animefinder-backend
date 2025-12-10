@@ -1,40 +1,55 @@
-export default async function handler(req, res) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*', // разрешаем все источники
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  };
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
-  if (req.method === 'OPTIONS') {
-    return res.status(204).set(headers).send('');
+export default async function handler(req, res) {
+  //
+  // 1) CORS FIX
+  //
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).set(headers).json({ error: 'Only POST allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const { image } = req.body;
-    if (!image) return res.status(400).set(headers).json({ error: 'No image provided' });
+    //
+    // 2) Получаем изображение
+    //
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
 
-    const cleanBase64 = typeof image === 'string' ? image.replace(/^data:.*;base64,/, '') : '';
-
-    const apiResp = await fetch('https://api.trace.moe/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: cleanBase64 })
+    //
+    // 3) Отправляем в trace.moe
+    //
+    const trace = await fetch(`https://api.trace.moe/search?anilistInfo`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "image/jpeg", // ок, trace.moe сам определит
+      },
+      body: buffer,
     });
 
-    if (!apiResp.ok) {
-      const text = await apiResp.text();
-      return res.status(502).set(headers).json({ error: 'trace.moe error', status: apiResp.status, info: text });
-    }
+    const result = await trace.json();
 
-    const json = await apiResp.json();
-    return res.status(200).set(headers).json(json);
+    //
+    // 4) Ответ
+    //
+    return res.status(200).json(result);
 
-  } catch (err) {
-    console.error('Backend crash:', err);
-    return res.status(500).set(headers).json({ error: 'Server error', message: String(err) });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Server error" });
   }
 }
