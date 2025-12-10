@@ -8,42 +8,38 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Only POST is allowed" });
+    return res.status(405).json({ error: "Only POST allowed" });
   }
 
   try {
-    const { image } = req.body;
+    let { image } = req.body;
 
-    if (!image) {
-      return res.status(400).json({ error: "No image provided" });
+    // Проверка
+    if (!image || typeof image !== "string") {
+      return res.status(400).json({ error: "Missing image" });
     }
 
-    // Если пришел "голый base64", автоматически добавим префикс PNG
-    let normalizedImage = image;
+    // === ГЛАВНОЕ ИСПРАВЛЕНИЕ ===
+    // Если фронт прислал чистый base64 — добавим префикс.
     if (!image.startsWith("data:image")) {
-      normalizedImage = "data:image/jpeg;base64," + image;
+      image = "data:image/jpeg;base64," + image;
     }
 
-    const traceResp = await fetch("https://api.trace.moe/search", {
+    const response = await fetch("https://api.trace.moe/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: normalizedImage }),
+      body: JSON.stringify({ image }),
     });
 
-    const data = await traceResp.json();
+    const data = await response.json();
 
-    if (!traceResp.ok) {
-      return res.status(traceResp.status).json({
-        error: data.error || "trace.moe returned an error",
-      });
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.error || "Trace.moe error" });
     }
 
-    return res.status(200).json({
-      result: data.result || [],
-    });
-
-  } catch (e) {
-    console.error("SERVER ERROR:", e);
+    return res.status(200).json(data);
+  } catch (err) {
+    console.error("SERVER ERROR:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 }
