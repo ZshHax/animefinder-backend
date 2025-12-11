@@ -1,43 +1,54 @@
-// Установите node-fetch, если еще не сделали: npm install cross-fetch
-const fetch = require('cross-fetch');
+// api/search.js
 
-module.exports = async (req, res) => {
-  // Устанавливаем заголовки CORS, чтобы ваш фронтенд на GitHub Pages мог получить ответ
-  res.setHeader('Access-Control-Allow-Origin', 'https://zshhax.github.io');
+// ВАЖНО: Отключаем автоматический парсинг тела запроса Vercel'ем.
+// Это нужно, чтобы передать файл "как есть" (потоком).
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+export default async function handler(req, res) {
+  // 1. Настройка CORS
+  res.setHeader('Access-Control-Allow-Origin', '*'); // Или 'https://zshhax.github.io'
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // Обработка предварительных OPTIONS-запросов от браузера (CORS handshake)
+  // Обработка preflight запроса
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed');
-    return;
-  }
-
-  const { imageUrl } = req.body;
-
-  if (!imageUrl) {
-    res.status(400).send('Missing imageUrl in request body');
-    return;
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
-    // Делаем запрос к trace.moe API с бэкенда (сервер-сервер, без проблем с CORS)
-    const response = await fetch(`api.trace.moe{encodeURIComponent(imageUrl)}`);
+    // 2. Перенаправление запроса на Trace.moe
+    // Мы берем весь запрос от фронта (req) и пересылаем его в trace.moe
+    // Trace.moe ожидает POST с бинарными данными картинки.
     
-    if (!response.ok) {
-      throw new Error(`trace.moe API error: ${response.statusText}`);
+    const traceResponse = await fetch("https://api.trace.moe/search?anilistInfo", {
+      method: "POST",
+      body: req, // Передаем входящий поток данных прямо в исходящий запрос
+      headers: {
+        "Content-Type": req.headers["content-type"], // Сохраняем тип контента (image/jpeg и т.д.)
+      },
+    });
+
+    const data = await traceResponse.json();
+
+    // Если Trace.moe вернул ошибку
+    if (!traceResponse.ok) {
+        console.error("Trace.moe error:", data);
+        return res.status(traceResponse.status).json(data);
     }
 
-    const data = await response.json();
-    res.status(200).json(data);
+    // 3. Возврат успешного ответа на фронт
+    return res.status(200).json(data);
 
   } catch (error) {
-    console.error('Error fetching from trace.moe:', error);
-    res.status(500).json({ error: 'Failed to fetch anime data', details: error.message });
+    console.error('Server Error:', error);
+    return res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
-};
+}
