@@ -1,58 +1,43 @@
-import formidable from "formidable";
-import fs from "fs";
+// Установите node-fetch, если еще не сделали: npm install cross-fetch
+const fetch = require('cross-fetch');
 
-export const config = {
-    api: {
-        bodyParser: false,
-    },
+module.exports = async (req, res) => {
+  // Устанавливаем заголовки CORS, чтобы ваш фронтенд на GitHub Pages мог получить ответ
+  res.setHeader('Access-Control-Allow-Origin', 'https://zshhax.github.io');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Обработка предварительных OPTIONS-запросов от браузера (CORS handshake)
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.status(405).send('Method Not Allowed');
+    return;
+  }
+
+  const { imageUrl } = req.body;
+
+  if (!imageUrl) {
+    res.status(400).send('Missing imageUrl in request body');
+    return;
+  }
+
+  try {
+    // Делаем запрос к trace.moe API с бэкенда (сервер-сервер, без проблем с CORS)
+    const response = await fetch(`api.trace.moe{encodeURIComponent(imageUrl)}`);
+    
+    if (!response.ok) {
+      throw new Error(`trace.moe API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
+
+  } catch (error) {
+    console.error('Error fetching from trace.moe:', error);
+    res.status(500).json({ error: 'Failed to fetch anime data', details: error.message });
+  }
 };
-
-export default async function handler(req, res) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-    if (req.method === "OPTIONS") {
-        return res.status(200).end();
-    }
-
-    if (req.method !== "POST") {
-        return res.status(405).json({ error: "Method not allowed" });
-    }
-
-    const SAUCE_API_KEY = "cbd937f4ee0fb43d631f7d2bf758e895eb2c5809";
-
-    const form = new formidable.IncomingForm();
-
-    form.parse(req, async (error, fields, files) => {
-        if (error) {
-            return res.status(500).json({ error: "Form parsing error" });
-        }
-
-        const file = files.image;
-        if (!file) {
-            return res.status(400).json({ error: "Image file missing" });
-        }
-
-        try {
-            const fileBuffer = fs.readFileSync(file.filepath);
-
-            const response = await fetch(
-                `https://saucenao.com/search.php?output_type=2&api_key=${SAUCE_API_KEY}`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": file.mimetype,
-                    },
-                    body: fileBuffer,
-                }
-            );
-
-            const data = await response.json();
-            return res.status(200).json(data);
-        } catch (err) {
-            console.error(err);
-            return res.status(500).json({ error: "SauceNAO request error" });
-        }
-    });
-}
